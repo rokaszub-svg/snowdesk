@@ -31,6 +31,8 @@ sed -e "s/__APP_NAME__/$APP_NAME/g" \
     -e "s/__BUILD__/$BUILD/g" \
     Resources/Info.plist > "$APP/Contents/Info.plist"
 
+cp -R Resources/Sprites "$APP/Contents/Resources/Sprites"
+
 echo "==> Icon"
 ICONSET="$DIST/AppIcon.iconset"
 mkdir -p "$ICONSET"

@@ -29,6 +29,73 @@ final class Snowball {
     }
 }
 
+final class Gift {
+    let node: SKSpriteNode
+    var vx: CGFloat
+    var vy: CGFloat = 0
+    weak var restingOn: Pile?
+    var onGround = false
+    init(node: SKSpriteNode, vx: CGFloat) { self.node = node; self.vx = vx }
+}
+
+final class Snowman {
+    let node: SKSpriteNode
+    var x: CGFloat
+    init(node: SKSpriteNode, x: CGFloat) { self.node = node; self.x = x }
+}
+
+final class Truck {
+    let node = SKNode()
+    var wheels: [SKSpriteNode] = []
+    let beacon: SKSpriteNode
+    var x: CGFloat
+    init(x: CGFloat) {
+        self.x = x
+        beacon = Sprites.node("beacon", 46, 46)
+        let body = Sprites.node("truck", 170, 85)
+        body.zPosition = 1
+        node.addChild(body)
+        for wx in [50, 115, 150] as [CGFloat] {
+            let w = Sprites.node("wheel", 22, 22)
+            w.position = CGPoint(x: wx - 85, y: -24.5)
+            w.zPosition = 2
+            node.addChild(w)
+            wheels.append(w)
+        }
+        beacon.position = CGPoint(x: -25, y: 37)
+        beacon.zPosition = 3
+        beacon.blendMode = .add
+        node.addChild(beacon)
+        beacon.run(.repeatForever(.sequence([
+            .fadeAlpha(to: 1, duration: 0.12), .wait(forDuration: 0.12),
+            .fadeAlpha(to: 0.1, duration: 0.18), .wait(forDuration: 0.2),
+        ])))
+    }
+    /// Blade's leading edge, relative to node.x.
+    static let front: CGFloat = -84
+}
+
+final class SledKid {
+    let node = Sprites.node("kid", 100, 70)
+    var x: CGFloat
+    var speed: CGFloat
+    init(x: CGFloat, speed: CGFloat) { self.x = x; self.speed = speed }
+}
+
+final class Sleigh {
+    let node = Sprites.node("santa0", 320, 115)
+    var x: CGFloat
+    let baseY: CGFloat
+    var t: CGFloat = 0
+    var frameT: CGFloat = 0
+    var frame = 0
+    var drops: [CGFloat]
+    let trail: SKEmitterNode
+    init(x: CGFloat, baseY: CGFloat, drops: [CGFloat], trail: SKEmitterNode) {
+        self.x = x; self.baseY = baseY; self.drops = drops; self.trail = trail
+    }
+}
+
 final class SnowScene: SKScene {
     /// This screen's frame in Cocoa global coordinates.
     let screenFrame: CGRect
@@ -40,14 +107,24 @@ final class SnowScene: SKScene {
     /// Visible window piles on this screen, front-to-back.
     private var order: [Pile] = []
     private var ground: Pile!
+
     private var balls: [Snowball] = []
-    private var plow: SKNode?
-    private var plowX: CGFloat = 0
+    private var gifts: [Gift] = []
+    private var snowmen: [Snowman] = []
+    private var truck: Truck?
+    private var kid: SledKid?
+    private var sleigh: Sleigh?
 
     private var lastTime: TimeInterval = 0
     private var lastRebuild: TimeInterval = 0
     private var lastBallCheck: TimeInterval = 0
+    private var nextEvent: TimeInterval = 0
+    private var firstEvent = false
     private var lastSignature = 0
+    private var clock: CGFloat = 0
+
+    private var blizzardUntil: CGFloat = 0
+    private var lastMouse: CGPoint?
 
     init(size: CGSize, screenFrame: CGRect) {
         self.screenFrame = screenFrame
@@ -78,29 +155,72 @@ final class SnowScene: SKScene {
     // MARK: - Public actions
 
     func runSnowplow() {
-        guard plow == nil else { return }
-        let node = SKNode()
-        let tractor = SKLabelNode(text: "🚜")
-        tractor.fontSize = 46
-        tractor.verticalAlignmentMode = .bottom
-        tractor.horizontalAlignmentMode = .center
-        node.addChild(tractor)
-        let blade = SKShapeNode(rectOf: CGSize(width: 8, height: 28), cornerRadius: 2)
-        blade.fillColor = NSColor(calibratedRed: 1.0, green: 0.76, blue: 0.1, alpha: 1)
-        blade.strokeColor = NSColor.black.withAlphaComponent(0.35)
-        blade.position = CGPoint(x: -30, y: 14)
-        node.addChild(blade)
-        node.zPosition = 8
-        plowX = size.width + 60
-        node.position = CGPoint(x: plowX, y: 2)
+        guard truck == nil, ground != nil else { return }
+        let t = Truck(x: size.width + 110)
+        t.node.zPosition = 8
+        t.node.position = CGPoint(x: t.x, y: 37)
+        addChild(t.node)
+        truck = t
+    }
+
+    func callSanta() {
+        guard sleigh == nil, ground != nil else { return }
+        let trail = SKEmitterNode()
+        trail.particleTexture = Textures.dot
+        trail.particleBirthRate = 90
+        trail.particleLifetime = 1.6
+        trail.particleLifetimeRange = 0.6
+        trail.particleSpeed = 25
+        trail.particleSpeedRange = 20
+        trail.emissionAngle = .pi
+        trail.emissionAngleRange = 0.8
+        trail.yAcceleration = -30
+        trail.particleSize = CGSize(width: 7, height: 7)
+        trail.particleScaleRange = 0.6
+        trail.particleScaleSpeed = -0.4
+        trail.particleAlphaSpeed = -0.6
+        trail.particleColor = NSColor(calibratedRed: 1, green: 0.85, blue: 0.4, alpha: 1)
+        trail.particleColorBlendFactor = 1
+        trail.particleBlendMode = .add
+        trail.targetNode = self
+        trail.zPosition = 11
+
+        let drops = (0..<Int.random(in: 2...4)).map { _ in CGFloat.random(in: 0.15...0.85) * size.width }.sorted()
+        let s = Sleigh(x: -180, baseY: size.height * .random(in: 0.62...0.8), drops: drops, trail: trail)
+        s.node.zPosition = 12
+        addChild(trail)
+        addChild(s.node)
+        sleigh = s
+    }
+
+    func sledRide() {
+        guard kid == nil, ground != nil else { return }
+        let k = SledKid(x: -60, speed: .random(in: 170...230))
+        k.node.zPosition = 9
+        addChild(k.node)
+        kid = k
+    }
+
+    func buildSnowman(at x: CGFloat? = nil) {
+        guard ground != nil, snowmen.count < 4 else { return }
+        let sx = x ?? .random(in: 90...max(91, size.width - 90))
+        let node = Sprites.node("snowman", 65, 100)
+        node.zPosition = 7
+        node.setScale(0.01)
+        let s = Snowman(node: node, x: sx)
         addChild(node)
-        plow = node
+        snowmen.append(s)
+        positionSnowman(s)
+        node.run(.sequence([.scale(to: 1.15, duration: 0.25), .scale(to: 1.0, duration: 0.12)]))
+        burst(at: CGPoint(x: sx, y: 20), count: 25, up: 160)
+    }
+
+    func blizzard() {
+        blizzardUntil = clock + 25
     }
 
     func clearSnowballs() {
-        for b in balls {
-            b.node.run(.sequence([.fadeOut(withDuration: 0.4), .removeFromParent()]))
-        }
+        for b in balls { b.node.run(.sequence([.fadeOut(withDuration: 0.4), .removeFromParent()])) }
         balls.removeAll()
     }
 
@@ -112,28 +232,70 @@ final class SnowScene: SKScene {
         for p in piles.values { p.clear() }
         ground?.clear()
         clearSnowballs()
+        for s in snowmen { s.node.run(.sequence([.fadeOut(withDuration: 0.4), .removeFromParent()])) }
+        snowmen.removeAll()
+        for g in gifts { g.node.run(.sequence([.fadeOut(withDuration: 0.4), .removeFromParent()])) }
+        gifts.removeAll()
     }
 
     // MARK: - Frame loop
 
     override func update(_ currentTime: TimeInterval) {
         guard ground != nil else { return }
-        let dt = CGFloat(lastTime == 0 ? 1.0 / 60 : min(currentTime - lastTime, 0.05))
+        let dt = CGFloat(lastTime == 0 ? 1.0 / 30 : min(currentTime - lastTime, 0.066))
         lastTime = currentTime
+        clock += dt
 
         syncWindows(currentTime)
         topUpFlakes()
         stepFlakes(dt)
+        stepCursor(dt)
         stepBalls(dt, currentTime)
-        stepPlow(dt)
+        stepGifts(dt)
+        stepTruck(dt)
+        stepKid(dt)
+        stepSleigh(dt)
+        scheduleEvents(currentTime)
 
-        if currentTime - lastRebuild > 1.0 / 15 {
+        if currentTime - lastRebuild > 0.2 {
             lastRebuild = currentTime
             for (k, p) in order.enumerated() where p.dirty {
                 p.rebuild { x, y in self.isCovered(x, y, before: k) }
             }
             if ground.dirty { ground.rebuild { _, _ in false } }
         }
+    }
+
+    private var blizzardLevel: CGFloat {
+        let left = blizzardUntil - clock
+        guard left > 0 else { return 0 }
+        return min(1, left / 3, (25 - left) / 3)
+    }
+
+    private var wind: CGFloat {
+        let gust = sin(clock * 0.13) * 0.25 + sin(clock * 0.41) * 0.1
+        return (CGFloat(prefs.wind) + gust + blizzardLevel * 1.6 * sin(clock * 0.3 + 1)) * 45
+    }
+
+    // MARK: - Events
+
+    private func scheduleEvents(_ now: TimeInterval) {
+        if nextEvent == 0 {
+            nextEvent = now + 6
+            firstEvent = true
+        }
+        let avg = ground.total / CGFloat(ground.heights.count)
+        if prefs.characters && truck == nil && avg > CGFloat(prefs.maxPile) * 0.75 { runSnowplow() }
+
+        guard now >= nextEvent else { return }
+        nextEvent = now + .random(in: 45...110)
+        guard prefs.characters else { return }
+        if firstEvent { firstEvent = false; callSanta(); return }
+        let r = Double.random(in: 0...1)
+        if r < 0.4 { callSanta() }
+        else if r < 0.7 { sledRide() }
+        else if r < 0.85 { blizzard() }
+        else { buildSnowman() }
     }
 
     // MARK: - Windows
@@ -159,7 +321,7 @@ final class SnowScene: SKScene {
                 }
                 if p.frame != r {
                     let moved = abs(r.minX - p.frame.minX) + abs(r.maxY - p.frame.maxY)
-                    if moved > 40 { shake(p, fraction: 0.6) } // fast drag knocks snow off
+                    if moved > 40 { shake(p, fraction: 0.6) }
                     p.frame = r
                     p.resize(to: r.width)
                     p.dirty = true
@@ -173,7 +335,6 @@ final class SnowScene: SKScene {
             }
         }
 
-        // Windows that vanished (minimised, other Space, closed): keep snow for a while.
         for (id, p) in Array(piles) where !seen.contains(id) {
             if let since = p.missingSince {
                 if now - since > 600 {
@@ -212,7 +373,7 @@ final class SnowScene: SKScene {
                 let take = h * fraction
                 p.heights[i] -= take
                 if i + 1 < p.heights.count { p.heights[i + 1] *= (1 - fraction) }
-                if spawned < 70 && CGFloat.random(in: 0...5) < take {
+                if spawned < 60 && CGFloat.random(in: 0...5) < take {
                     let f = makeFlake(chunk: true)
                     f.node.position = CGPoint(x: p.frame.minX + CGFloat(i) * Pile.colW, y: p.top + h * 0.5)
                     f.vx = .random(in: -50...50)
@@ -225,11 +386,63 @@ final class SnowScene: SKScene {
         p.dirty = true
     }
 
+    private func burst(at p: CGPoint, count: Int, up: CGFloat) {
+        for _ in 0..<count {
+            let f = makeFlake(chunk: true)
+            f.node.position = CGPoint(x: p.x + .random(in: -12...12), y: p.y + .random(in: 0...20))
+            f.vx = .random(in: -140...140)
+            f.vy = .random(in: up * 0.3...up)
+        }
+    }
+
+    // MARK: - Cursor
+
+    private func stepCursor(_ dt: CGFloat) {
+        guard prefs.cursor else { lastMouse = nil; return }
+        let g = NSEvent.mouseLocation
+        let m = CGPoint(x: g.x - screenFrame.minX, y: g.y - screenFrame.minY)
+        defer { lastMouse = m }
+        guard m.x >= -50, m.x <= size.width + 50, m.y >= -50, m.y <= size.height + 50 else { return }
+
+        // Flakes swerve around the pointer.
+        let R: CGFloat = 70
+        for f in flakes where !f.chunk {
+            let dx = f.node.position.x - m.x
+            let dy = f.node.position.y - m.y
+            guard abs(dx) < R, abs(dy) < R else { continue }
+            let d2 = dx * dx + dy * dy
+            guard d2 < R * R, d2 > 1 else { continue }
+            let d = sqrt(d2)
+            let push = (R - d) / R * 260 * dt
+            f.node.position = CGPoint(x: f.node.position.x + dx / d * push, y: f.node.position.y + dy / d * push * 0.6)
+        }
+
+        // A fast swipe through a pile knocks the snow off.
+        guard let last = lastMouse else { return }
+        let speed = hypot(m.x - last.x, m.y - last.y) / max(dt, 0.001)
+        guard speed > 700 else { return }
+        for p in order + [ground!] {
+            guard m.x >= p.frame.minX, m.x <= p.frame.maxX else { continue }
+            let surface = p.top + p.height(at: m.x)
+            guard m.y >= p.top - 6, m.y <= surface + 10 else { continue }
+            let removed = p.knock(at: m.x, radius: 26)
+            let dir: CGFloat = m.x >= last.x ? 1 : -1
+            for (x, h) in removed where CGFloat.random(in: 0...4) < h {
+                let f = makeFlake(chunk: true)
+                f.node.position = CGPoint(x: x, y: p.top + h * 0.5)
+                f.vx = dir * .random(in: 60...220)
+                f.vy = .random(in: 60...220)
+            }
+            break
+        }
+    }
+
     // MARK: - Flakes
 
     private func targetCount() -> Int {
         let area = (size.width * size.height) / (1440 * 900)
-        return max(10, Int(CGFloat(prefs.intensity) * 500 * area))
+        let mult = 1 + blizzardLevel * 1.8
+        return max(10, Int(CGFloat(prefs.intensity) * 380 * area * mult))
     }
 
     @discardableResult
@@ -282,8 +495,8 @@ final class SnowScene: SKScene {
     }
 
     private func stepFlakes(_ dt: CGFloat) {
-        let wind = CGFloat(prefs.wind) * 45
-        let speed = CGFloat(prefs.speed)
+        let wind = self.wind
+        let speed = CGFloat(prefs.speed) * (1 + blizzardLevel * 0.6)
         let accumulate = prefs.accumulate
         let maxH = CGFloat(prefs.maxPile)
         let target = targetCount()
@@ -330,32 +543,47 @@ final class SnowScene: SKScene {
         }
     }
 
-    private func tryLand(x: CGFloat, from y0: CGFloat, to y1: CGFloat, size s: CGFloat, maxH: CGFloat) -> Bool {
-        let amount = s * 0.55
+    /// Finds the first surface a falling point crosses. Returns the pile it hit.
+    private func surfaceHit(x: CGFloat, from y0: CGFloat, to y1: CGFloat) -> Pile? {
         for (k, p) in order.enumerated() {
             guard x >= p.frame.minX, x <= p.frame.maxX else { continue }
             let surface = p.top + p.height(at: x)
-            if y0 >= surface && y1 < surface {
-                if isCovered(x, surface, before: k) { continue }
-                p.add(at: x, amount: amount, maxH: maxH)
-                return true
-            }
+            if y0 >= surface && y1 < surface && !isCovered(x, surface, before: k) { return p }
         }
-        if y1 < ground.height(at: x) {
-            ground.add(at: x, amount: amount * 0.6, maxH: maxH * 1.3)
-            return true
-        }
-        return false
+        if y1 < ground.height(at: x) { return ground }
+        return nil
     }
 
-    // MARK: - Snowballs
+    private func tryLand(x: CGFloat, from y0: CGFloat, to y1: CGFloat, size s: CGFloat, maxH: CGFloat) -> Bool {
+        guard let p = surfaceHit(x: x, from: y0, to: y1) else { return false }
+        if p === ground {
+            ground.add(at: x, amount: s * 0.9, maxH: maxH * 1.3)
+        } else {
+            p.add(at: x, amount: s * 1.3, maxH: maxH)
+        }
+        return true
+    }
+
+    // MARK: - Snowballs & snowmen
 
     private func stepBalls(_ dt: CGFloat, _ now: TimeInterval) {
         if prefs.snowballs && now - lastBallCheck > 1 {
             lastBallCheck = now
-            let avg = ground.heights.reduce(0, +) / CGFloat(ground.heights.count)
-            if balls.count < 6 && avg > CGFloat(prefs.maxPile) * 0.35 && Double.random(in: 0...1) < 0.12 {
+            let avg = ground.total / CGFloat(ground.heights.count)
+            if balls.count < 6 && avg > CGFloat(prefs.maxPile) * 0.3 && Double.random(in: 0...1) < 0.15 {
                 spawnBall()
+            }
+            // Three resting snowballs become a snowman.
+            let resting = balls.filter { !$0.rolling }
+            if prefs.characters && resting.count >= 3 && snowmen.count < 4 {
+                let use = Array(resting.prefix(3))
+                let x = use.map { $0.x }.reduce(0, +) / 3
+                for b in use {
+                    b.node.run(.sequence([.group([.move(to: CGPoint(x: x, y: b.node.position.y + 20), duration: 0.35),
+                                                  .fadeOut(withDuration: 0.35)]), .removeFromParent()]))
+                }
+                balls.removeAll { b in use.contains { $0 === b } }
+                run(.wait(forDuration: 0.3)) { [weak self] in self?.buildSnowman(at: x) }
             }
         }
 
@@ -380,6 +608,11 @@ final class SnowScene: SKScene {
             b.node.setScale((b.r * 2) / Textures.ballSize)
             b.node.position = CGPoint(x: b.x, y: ground.height(at: b.x) * 0.5 + b.r - 1)
         }
+        for s in snowmen { positionSnowman(s) }
+    }
+
+    private func positionSnowman(_ s: Snowman) {
+        s.node.position = CGPoint(x: s.x, y: ground.height(at: s.x) * 0.5 + 49)
     }
 
     private func spawnBall() {
@@ -397,15 +630,69 @@ final class SnowScene: SKScene {
         balls.append(b)
     }
 
-    // MARK: - Snowplow
+    private func smash(_ s: Snowman) {
+        burst(at: CGPoint(x: s.x, y: 30), count: 50, up: 260)
+        s.node.removeFromParent()
+        snowmen.removeAll { $0 === s }
+    }
 
-    private func stepPlow(_ dt: CGFloat) {
-        guard let node = plow else { return }
-        plowX -= 260 * dt
-        let front = plowX - 34
-        node.position = CGPoint(x: plowX, y: 2 + abs(sin(plowX * 0.08)) * 2)
+    // MARK: - Gifts
 
-        // Clear everything behind the blade, bank some of it in front.
+    private func dropGift(at x: CGFloat, y: CGFloat, vx: CGFloat) {
+        let g = Gift(node: Sprites.node("gift", 18, 18), vx: vx)
+        g.node.position = CGPoint(x: x, y: y)
+        g.node.zPosition = 9
+        addChild(g.node)
+        gifts.append(g)
+        if gifts.count > 10 {
+            let old = gifts.removeFirst()
+            old.node.run(.sequence([.fadeOut(withDuration: 0.5), .removeFromParent()]))
+        }
+    }
+
+    private func stepGifts(_ dt: CGFloat) {
+        for g in gifts {
+            if g.onGround {
+                g.node.position = CGPoint(x: g.node.position.x, y: ground.height(at: g.node.position.x) * 0.6 + 8)
+                continue
+            }
+            if let p = g.restingOn {
+                let x = g.node.position.x
+                let still = !p.node.isHidden && order.contains { $0 === p } && x >= p.frame.minX && x <= p.frame.maxX
+                if still {
+                    g.node.position = CGPoint(x: x, y: p.top + p.height(at: x) * 0.6 + 8)
+                    continue
+                }
+                g.restingOn = nil
+            }
+            g.vy -= 500 * dt
+            g.vx *= (1 - 0.5 * dt)
+            let p0 = g.node.position
+            let nx = p0.x + g.vx * dt
+            let ny = p0.y + g.vy * dt
+            g.node.zRotation += g.vx * dt * 0.02
+            if let hit = surfaceHit(x: nx, from: p0.y - 8, to: ny - 8) {
+                g.vy = 0
+                g.node.zRotation = .random(in: -0.15...0.15)
+                if hit === ground { g.onGround = true } else { g.restingOn = hit }
+                burst(at: CGPoint(x: nx, y: ny - 6), count: 6, up: 90)
+                g.node.position = CGPoint(x: nx, y: ny)
+            } else {
+                g.node.position = CGPoint(x: nx, y: ny)
+            }
+        }
+    }
+
+    // MARK: - Snowplow truck
+
+    private func stepTruck(_ dt: CGFloat) {
+        guard let t = truck else { return }
+        let v: CGFloat = 200
+        t.x -= v * dt
+        let front = t.x + Truck.front
+        t.node.position = CGPoint(x: t.x, y: 37 + abs(sin(t.x * 0.05)) * 1.2)
+        for w in t.wheels { w.zRotation += v * dt / 11 }
+
         let iFront = ground.index(for: front)
         var pushed: CGFloat = 0
         if iFront < ground.heights.count {
@@ -415,30 +702,95 @@ final class SnowScene: SKScene {
             }
         }
         if pushed > 0 {
-            for j in max(0, iFront - 6)..<iFront {
-                ground.heights[j] = min(32, ground.heights[j] + pushed * 0.05)
+            for j in max(0, iFront - 5)..<iFront {
+                ground.heights[j] = min(30, ground.heights[j] + pushed * 0.04)
             }
-            for _ in 0..<min(6, Int(pushed / 3) + 1) {
+            for _ in 0..<min(8, Int(pushed / 3) + 1) {
                 let f = makeFlake(chunk: true)
-                f.node.position = CGPoint(x: front - 4, y: .random(in: 4...22))
-                f.vx = -CGFloat.random(in: 60...170)
-                f.vy = .random(in: 60...200)
+                f.node.position = CGPoint(x: front - 2, y: .random(in: 6...50))
+                f.vx = -CGFloat.random(in: 80...240)
+                f.vy = .random(in: 80...260)
             }
         }
         ground.dirty = true
 
-        for b in balls where b.x + b.r > front && b.x - b.r < plowX + 30 {
+        for b in balls where b.x + b.r > front && b.x - b.r < t.x + 85 {
             b.x = front - b.r
             b.rolling = false
         }
+        for g in gifts where g.onGround && g.node.position.x > front && g.node.position.x < t.x + 85 {
+            g.node.position.x = front - 9
+        }
+        for s in snowmen where s.x > front && s.x < t.x { smash(s) }
 
-        if plowX < -90 {
-            node.removeFromParent()
-            plow = nil
+        if t.x < -110 {
+            t.node.removeFromParent()
+            truck = nil
             balls.removeAll { b in
                 if b.x + b.r < 0 { b.node.removeFromParent(); return true }
                 return false
             }
+            gifts.removeAll { g in
+                if g.onGround && g.node.position.x < 0 { g.node.removeFromParent(); return true }
+                return false
+            }
+        }
+    }
+
+    // MARK: - Sledding kid
+
+    private func stepKid(_ dt: CGFloat) {
+        guard let k = kid else { return }
+        k.x += k.speed * dt
+        let gh = ground.height(at: k.x)
+        k.node.position = CGPoint(x: k.x, y: gh * 0.7 + 30 + abs(sin(k.x * 0.06)) * 2)
+        k.node.zRotation = sin(k.x * 0.03) * 0.04
+
+        // Carve a track and kick up powder.
+        let i = ground.index(for: k.x - 20)
+        for j in max(0, i - 6)...min(ground.heights.count - 1, i + 6) { ground.heights[j] *= 0.92 }
+        ground.dirty = true
+        if gh > 2 && Double.random(in: 0...1) < 0.6 {
+            let f = makeFlake(chunk: true)
+            f.node.position = CGPoint(x: k.x - 45, y: gh * 0.7 + 6)
+            f.vx = -CGFloat.random(in: 40...140)
+            f.vy = .random(in: 60...180)
+        }
+        for s in snowmen where abs(s.x - (k.x + 40)) < 12 { smash(s) }
+
+        if k.x > size.width + 70 {
+            k.node.removeFromParent()
+            kid = nil
+        }
+    }
+
+    // MARK: - Santa
+
+    private func stepSleigh(_ dt: CGFloat) {
+        guard let s = sleigh else { return }
+        s.x += 240 * dt
+        s.t += dt
+        s.frameT += dt
+        if s.frameT > 0.16 {
+            s.frameT = 0
+            s.frame = 1 - s.frame
+            s.node.texture = Sprites.texture("santa\(s.frame)")
+        }
+        let y = s.baseY + sin(s.t * 1.6) * 26
+        s.node.position = CGPoint(x: s.x, y: y)
+        s.node.zRotation = cos(s.t * 1.6) * 0.06
+        s.trail.position = CGPoint(x: s.x - 150, y: y - 30)
+
+        if let next = s.drops.first, s.x - 90 >= next {
+            s.drops.removeFirst()
+            dropGift(at: s.x - 110, y: y, vx: 120)
+        }
+
+        if s.x > size.width + 200 {
+            s.node.removeFromParent()
+            s.trail.particleBirthRate = 0
+            s.trail.run(.sequence([.wait(forDuration: 2.5), .removeFromParent()]))
+            sleigh = nil
         }
     }
 }

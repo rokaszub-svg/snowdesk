@@ -37,6 +37,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .dropFirst()
             .sink { [weak self] _ in DispatchQueue.main.async { self?.rebuildOverlays() } }
             .store(in: &bag)
+        Prefs.shared.$smooth
+            .dropFirst()
+            .sink { [weak self] on in
+                self?.overlays.forEach { $0.skView.preferredFramesPerSecond = on ? 60 : 30 }
+            }
+            .store(in: &bag)
 
         rebuildOverlays()
     }
@@ -90,8 +96,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         let live = state == .running
+        add(menu, "Call Santa", #selector(santa), enabled: live, symbol: "gift")
+        add(menu, "Sledding", #selector(sled), enabled: live, symbol: "figure.wave")
+        add(menu, "Build a Snowman", #selector(snowman), enabled: live, symbol: "figure.stand")
+        add(menu, "Blizzard!", #selector(blizzard), enabled: live, symbol: "wind.snow")
         add(menu, "Run Snowplow", #selector(snowplow), enabled: live, symbol: "truck.box")
-        add(menu, "Shake Snow Off Windows", #selector(shakeOff), enabled: live, symbol: "wind")
+        menu.addItem(.separator())
+        add(menu, "Shake Snow Off Windows", #selector(shakeOff), enabled: live, symbol: "hand.wave")
         add(menu, "Clear Snowballs", #selector(clearSnowballs), enabled: state != .stopped, symbol: "circle.circle")
         add(menu, "Clear All Snow", #selector(clearAll), enabled: state != .stopped, symbol: "trash")
         menu.addItem(.separator())
@@ -120,6 +131,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func start() { state = .running; rebuildOverlays() }
 
     @objc private func snowplow() { scenes.forEach { $0.runSnowplow() } }
+    @objc private func santa() { scenes.forEach { $0.callSanta() } }
+    @objc private func sled() { scenes.forEach { $0.sledRide() } }
+    @objc private func snowman() { scenes.forEach { $0.buildSnowman() } }
+    @objc private func blizzard() { scenes.forEach { $0.blizzard() } }
     @objc private func shakeOff() { scenes.forEach { $0.shakeOffAll() } }
     @objc private func clearSnowballs() { scenes.forEach { $0.clearSnowballs() } }
     @objc private func clearAll() { scenes.forEach { $0.clearAllSnow() } }

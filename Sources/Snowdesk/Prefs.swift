@@ -19,9 +19,12 @@ final class Prefs: ObservableObject {
     @Published var maxPile: Double { didSet { d.set(maxPile, forKey: "maxPile") } }
     @Published var snowballs: Bool { didSet { d.set(snowballs, forKey: "snowballs") } }
     @Published var allScreens: Bool { didSet { d.set(allScreens, forKey: "allScreens") } }
+    @Published var characters: Bool { didSet { d.set(characters, forKey: "characters") } }
+    @Published var cursor: Bool { didSet { d.set(cursor, forKey: "cursor") } }
+    @Published var smooth: Bool { didSet { d.set(smooth, forKey: "smooth") } }
 
     static let defaults: [String: Any] = [
-        "intensity": 0.6,
+        "intensity": 0.5,
         "speed": 1.0,
         "wind": 0.15,
         "flakeSize": 1.0,
@@ -29,6 +32,9 @@ final class Prefs: ObservableObject {
         "maxPile": 16.0,
         "snowballs": true,
         "allScreens": true,
+        "characters": true,
+        "cursor": true,
+        "smooth": false,
     ]
 
     private init() {
@@ -41,6 +47,9 @@ final class Prefs: ObservableObject {
         maxPile = d.double(forKey: "maxPile")
         snowballs = d.bool(forKey: "snowballs")
         allScreens = d.bool(forKey: "allScreens")
+        characters = d.bool(forKey: "characters")
+        cursor = d.bool(forKey: "cursor")
+        smooth = d.bool(forKey: "smooth")
     }
 
     func resetToDefaults() {
@@ -52,5 +61,8 @@ final class Prefs: ObservableObject {
         maxPile = Prefs.defaults["maxPile"] as! Double
         snowballs = Prefs.defaults["snowballs"] as! Bool
         allScreens = Prefs.defaults["allScreens"] as! Bool
+        characters = Prefs.defaults["characters"] as! Bool
+        cursor = Prefs.defaults["cursor"] as! Bool
+        smooth = Prefs.defaults["smooth"] as! Bool
     }
 }

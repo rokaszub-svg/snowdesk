@@ -23,7 +23,7 @@ final class OverlayWindow: NSWindow {
         collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
 
         skView.allowsTransparency = true
-        skView.preferredFramesPerSecond = 60
+        skView.preferredFramesPerSecond = Prefs.shared.smooth ? 60 : 30
         skView.ignoresSiblingOrder = true
         skView.autoresizingMask = [.width, .height]
         contentView = skView

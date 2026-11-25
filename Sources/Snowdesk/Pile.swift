@@ -3,7 +3,7 @@ import SpriteKit
 
 /// A strip of accumulated snow sitting on the top edge of a window (or the ground).
 final class Pile {
-    static let colW: CGFloat = 3
+    static let colW: CGFloat = 4
 
     let id: CGWindowID
     let isGround: Bool
@@ -20,8 +20,8 @@ final class Pile {
         self.isGround = isGround
         heights = Array(repeating: 0, count: Pile.columns(for: frame.width))
         node.fillColor = NSColor(calibratedRed: 0.975, green: 0.985, blue: 1.0, alpha: 0.97)
-        node.strokeColor = NSColor(calibratedRed: 0.80, green: 0.87, blue: 0.97, alpha: 0.55)
-        node.lineWidth = 1
+        node.strokeColor = .clear
+        node.lineWidth = 0
         node.isAntialiased = true
         node.zPosition = 5
     }
@@ -89,6 +89,21 @@ final class Pile {
             }
         }
     }
+
+    /// Removes snow around x (cursor swipe). Returns (x, removed) samples for spray.
+    func knock(at x: CGFloat, radius: CGFloat) -> [(CGFloat, CGFloat)] {
+        var out: [(CGFloat, CGFloat)] = []
+        let lo = index(for: x - radius), hi = index(for: x + radius)
+        guard lo <= hi else { return out }
+        for i in lo...hi where heights[i] > 0.5 {
+            out.append((frame.minX + CGFloat(i) * Pile.colW, heights[i]))
+            heights[i] *= 0.15
+        }
+        if !out.isEmpty { dirty = true }
+        return out
+    }
+
+    var total: CGFloat { heights.reduce(0, +) }
 
     func clear() {
         for i in heights.indices { heights[i] = 0 }

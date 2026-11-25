@@ -19,6 +19,11 @@ struct SettingsView: View {
                 LabeledSlider(title: "Max depth", value: $prefs.maxPile, range: 4...30)
                 Toggle("Snowballs", isOn: $prefs.snowballs)
             }
+            Section("Fun") {
+                Toggle("Characters (Santa, sledding, snowplow, snowmen)", isOn: $prefs.characters)
+                Toggle("Snow reacts to the cursor", isOn: $prefs.cursor)
+                Toggle("Extra smooth (60 fps, uses more battery)", isOn: $prefs.smooth)
+            }
             Section("General") {
                 Toggle("Snow on all displays", isOn: $prefs.allScreens)
                 Toggle("Open at login", isOn: $launchAtLogin)
